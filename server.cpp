@@ -255,7 +255,6 @@ int main(void){
 			
 			if(recvbuf[0] == 'h'){
 				
-				
 				sendResult = sendto(serverSocket, recvbuf, recvbuflen, 0, (struct sockaddr *)&clientAddr, clientAddrLen);
 				if(sendResult < 0){
 					printf("sendto failed.\n");
@@ -271,7 +270,7 @@ int main(void){
 		
 		
 		frameCount++;
-		Sleep(3000);
+		Sleep(2000);
 	}
 	
 	// shutdown gdiplus 
