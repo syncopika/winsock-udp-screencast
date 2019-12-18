@@ -195,13 +195,13 @@ int main(int argc, char *argv[]){
 						
 						if(currPacketNum != lastPacketNum + 1){
 							for(int i = lastPacketNum+1; i < currPacketNum; i++){
-								dataSize = (i == 16) ? 50000 : 60000;
+								int dataSize2 = (i == 16) ? 50000 : 60000;
 								std::cout << "filling in data for missing packet num: " << i << std::endl;
 								// fill with rgba(255,255,255,255) for any missing packets between last packet num and current 
-								UINT8* filler = new UINT8[dataSize];
-								memset(filler, 255, dataSize);
-								pixelData.insert(pixelData.end(), filler, filler+dataSize);
-								delete filler;
+								UINT8* filler = new UINT8[dataSize2];
+								memset(filler, 255, dataSize2);
+								pixelData.insert(pixelData.end(), filler, filler+dataSize2);
+								delete[] filler;
 							}
 						}
 						
@@ -218,7 +218,7 @@ int main(int argc, char *argv[]){
 					for(int i = lastPacketNum; i < packetsToExpect; i++){
 						int size = (i == 16) ? 50000 : 60000;
 						UINT8* filler = new UINT8[size];
-						memset(filler, 0, size);
+						memset(filler, 255, size);
 						pixelData.insert(pixelData.end(), filler, filler+size);
 						delete[] filler;
 					}
@@ -231,7 +231,7 @@ int main(int argc, char *argv[]){
 					// try this: https://gamedev.stackexchange.com/questions/102490/fastest-way-to-render-image-data-from-buffer
 					// this might help too? https://www.gamedev.net/forums/topic/683956-blit-a-byte-array-of-pixels-to-screen-in-sdl-fast/
 					std::cout << "the total size of the image data in bytes: " << pixelData.size() << std::endl;
-					uint8_t* imageData = new uint8_t[(int)pixelData.size()];// = (uint8_t *)&pixelData[0];
+					uint8_t* imageData = new uint8_t[(int)pixelData.size()];
 					
 					SDL_Texture* texBuf = SDL_CreateTexture(
 											renderer,
@@ -243,6 +243,7 @@ int main(int argc, char *argv[]){
 					int pitch = WINDOW_WIDTH * 4; // 4 bytes per pixel
 					SDL_LockTexture(texBuf, NULL, (void**)&imageData, &pitch);
 					
+					// try update instead of lock? https://forums.libsdl.org/viewtopic.php?t=9728
 					// fill the texture pixel buffer
 					memcpy(imageData, (uint8_t *)&pixelData[0], pixelData.size());
 					
@@ -250,19 +251,19 @@ int main(int argc, char *argv[]){
 					SDL_RenderCopy(renderer, texBuf, NULL, NULL);
 					SDL_RenderPresent(renderer);
 					
+					delete[] imageData;
+					SDL_DestroyTexture(texBuf);
+					
+					// reset
+					packetsReceived = 0;
+					packetsToExpect = 0;
+					
 					// get new frame 
 					int bytesSent = sendto(connectSocket, msg, str.length(), 0, (struct sockaddr *)&servAddr, size);
 					if(bytesSent < 0){
 						printf("sendto for new frame failed.\n");
 						exit(1);
 					}
-					
-					delete[] imageData;
-					
-					// reset
-					packetsReceived = 0;
-					packetsToExpect = 0;
-					
 				}
 				
 				std::cout << "--------------" << std::endl;
@@ -283,6 +284,9 @@ int main(int argc, char *argv[]){
 	}
 	
 	WSACleanup();
+	
+	SDL_DestroyRenderer(renderer);
+	SDL_DestroyWindow(window);
 	SDL_Quit();
 	return 0;
 }
