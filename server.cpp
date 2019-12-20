@@ -270,7 +270,7 @@ int main(void){
 		
 		
 		frameCount++;
-		Sleep(2000);
+		Sleep(1000);
 	}
 	
 	// shutdown gdiplus 

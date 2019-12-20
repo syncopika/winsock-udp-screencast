@@ -117,7 +117,22 @@ int main(int argc, char *argv[]){
 	
 	int packetsToExpect = 0;
 	int packetsReceived = 0;
-	//int lastFrameId = -1;
+	int regularPacketDataSize = 60000; // this is specific to the current parameters (image coming in is 960000 bytes)
+	//int lastPacketDataSize = 0;
+	int lastFrameId = -1;
+	
+	// how do we know when we should process all the chunks of a frame? we should expect packet loss,
+	// so we don't really know when we've seen the last packet of a frame?
+	// since on the server side we have a sleep in between frames, is it very unlikely that a packet for the 
+	// next frame could slip in with the packets of the current frame? so we can look at frame id maybe?
+	
+	// we can cheat a little for now. we know exactly how big the image is coming in,
+	// so we know exactly how many pixel data bytes can go into each packet. 
+	// for now, let's use this knowledge (i.e. there should be 16 packets, each one with 
+	// 60000 bytes of data except the last packet, which has 50000). this is beacause we hardcoded
+	// the width and height of the image, which is 600 and 400, respectively.
+	int dataSize = regularPacketDataSize;
+		
 	while(1){
 		// clear the recv buffer 
 		ZeroMemory(recvbuf, recvbuflen);
@@ -131,11 +146,6 @@ int main(int argc, char *argv[]){
 			}
 			sentInitMsg = true;
 		}
-	
-		// how do we know when we should process all the chunks of a frame? we should expect packet loss,
-		// so we don't really know when we've seen the last packet of a frame?
-		// since on the server side we have a sleep in between frames, is it very unlikely that a packet for the 
-		// next frame could slip in with the packets of the current frame? so we can look at frame id maybe?
 		
 		// receive msg
 		rtnVal = recvfrom(connectSocket, recvbuf, recvbuflen, 0, (struct sockaddr *)&servAddr, &size);
@@ -150,25 +160,17 @@ int main(int argc, char *argv[]){
 			}else if(recvbuf[0] == 'p'){
 				
 				UINT8* pixels = (UINT8*)recvbuf;
-				packetsReceived++;
 				
 				// packet chunk 
 				int packetNum = (int)pixels[1];
-				//int currFrameId = (int)pixels[3];
-				std::cout << "frame id: " << (int)pixels[3] << std::endl;
-				std::cout << "packet num: " << packetNum << std::endl;
-				std::cout << "data size for this packet: " << (int)pixels[5] << std::endl;
-				std::cout << "first byte of data: " << (int)pixels[6] << std::endl;
+				int currFrameId = (int)pixels[3];
+				//std::cout << "frame id: " << (int)pixels[3] << std::endl;
+				//std::cout << "data size for this packet: " << (int)pixels[5] << std::endl;
+				//std::cout << "first byte of data: " << (int)pixels[6] << std::endl;
 				
-				// need to make a copy of the received data 
-				// note that this is hardcoded right now based on assumptions of the image data! (assumes 600 x 400 window)
-				int dataSize = (packetNum == 16) ? 50000 : 60000;
-				UINT8* pixelsCopy = new UINT8[dataSize];
-				memcpy(pixelsCopy, recvbuf+6, dataSize);
-				
-				std::pair<int, UINT8*> packetChunk(packetNum, pixelsCopy);
-				pqueue.push(packetChunk);
-				
+				if(lastFrameId == -1){
+					lastFrameId = currFrameId;
+				}
 				
 				// if we get more than half the packets (probably rethink this later)
 				if((float)packetsReceived > (packetsToExpect / 2)){
@@ -177,49 +179,50 @@ int main(int argc, char *argv[]){
 					std::cout << "got at least half the packets..." << std::endl;
 					
 					int lastPacketNum = 0;
+					
 					while(!pqueue.empty()){
-						std::cout << "packet number: " << pqueue.top().first << std::endl;
 						
 						// collect all the data for the image
-						// we can cheat a little for now. we know exactly how big the image is coming in,
-						// so we know exactly how many pixel data bytes can go into each packet. 
-						// for now, let's use this knowledge (i.e. there should be 16 packets, each one with 
-						// 60000 bytes of data except the last packet, which has 50000). this is beacause we hardcoded
-						// the width and height of the image, which is 600 and 400, respectively.
 						
 						// neat! http://forums.codeguru.com/showthread.php?509825-std-vectors-Append-chunk-of-data-to-the-end
 						// https://stackoverflow.com/questions/7593086/why-use-non-member-begin-and-end-functions-in-c11
 						int currPacketNum = pqueue.top().first;
+						std::cout << "packet number: " << currPacketNum << std::endl;
+						//std::cout << "total bytes collected so far: " << pixelData.size() << std::endl;
 						UINT8* data = pqueue.top().second;
-						int dataSize = (currPacketNum == 16) ? 50000 : 60000; // last packet has a different length of bytes
 						
 						if(currPacketNum != lastPacketNum + 1){
 							for(int i = lastPacketNum+1; i < currPacketNum; i++){
-								int dataSize2 = (i == 16) ? 50000 : 60000;
 								std::cout << "filling in data for missing packet num: " << i << std::endl;
 								// fill with rgba(255,255,255,255) for any missing packets between last packet num and current 
-								UINT8* filler = new UINT8[dataSize2];
-								memset(filler, 255, dataSize2);
-								pixelData.insert(pixelData.end(), filler, filler+dataSize2);
+								UINT8* filler = new UINT8[dataSize];
+								memset(filler, 255, dataSize);
+								pixelData.insert(pixelData.end(), filler, filler+dataSize);
 								delete[] filler;
 							}
 						}
 						
+						// this is the current packet's data
 						pixelData.insert(pixelData.end(), data, data+dataSize);
 
 						delete[] data;
 						lastPacketNum = currPacketNum;
 						pqueue.pop();
+						
+						// this means we won't look at any more packets that might've come in after 
+						// we processed this frame. this step forces the priority queue to only add
+						// packets for the next frame, 
+						lastFrameId = currFrameId+1 % 100;
 					}
 					
 					// if missing last packet, fill in 
 					std::cout << "lastPacketNum seen: " << lastPacketNum << std::endl;
 					std::cout << "num packets expected: " << packetsToExpect << std::endl;
-					for(int i = lastPacketNum; i < packetsToExpect; i++){
-						int size = (i == 16) ? 50000 : 60000;
-						UINT8* filler = new UINT8[size];
-						memset(filler, 255, size);
-						pixelData.insert(pixelData.end(), filler, filler+size);
+					for(int i = lastPacketNum+1; i <= packetsToExpect; i++){
+						std::cout << "filling in data for missing packet num after last packet: " << i << std::endl;
+						UINT8* filler = new UINT8[dataSize];
+						memset(filler, 255, dataSize);
+						pixelData.insert(pixelData.end(), filler, filler+dataSize);
 						delete[] filler;
 					}
 					
@@ -245,7 +248,7 @@ int main(int argc, char *argv[]){
 					
 					// try update instead of lock? https://forums.libsdl.org/viewtopic.php?t=9728
 					// fill the texture pixel buffer
-					memcpy(imageData, (uint8_t *)&pixelData[0], pixelData.size());
+					memcpy(imageData, (uint8_t *)&pixelData[0], (int)pixelData.size());
 					
 					SDL_UnlockTexture(texBuf);
 					SDL_RenderCopy(renderer, texBuf, NULL, NULL);
@@ -256,7 +259,6 @@ int main(int argc, char *argv[]){
 					
 					// reset
 					packetsReceived = 0;
-					packetsToExpect = 0;
 					
 					// get new frame 
 					int bytesSent = sendto(connectSocket, msg, str.length(), 0, (struct sockaddr *)&servAddr, size);
@@ -264,9 +266,24 @@ int main(int argc, char *argv[]){
 						printf("sendto for new frame failed.\n");
 						exit(1);
 					}
-				}
+				} // end process image 
 				
-				std::cout << "--------------" << std::endl;
+				if(currFrameId == lastFrameId){
+					// add the current packet being looked at to the priority queue
+					// need to make a copy of the received data 
+					// note that this is hardcoded right now based on assumptions of the image data! (assumes 600 x 400 window)
+					//int dataSize = regularPacketDataSize;
+					UINT8* pixelsCopy = new UINT8[dataSize];
+					memcpy(pixelsCopy, recvbuf+6, dataSize);
+					
+					std::pair<int, UINT8*> packetChunk(packetNum, pixelsCopy);
+					std::cout << "adding packet num: " << packetNum << " to queue" << " for frame id: " << currFrameId << std::endl;
+					pqueue.push(packetChunk); 
+					
+					packetsReceived++;
+				}
+				//std::cout << "--------------" << std::endl;
+				
 			}else{
 				// frame data. rebuild image from the chunks and display
 				printf("Message received from server: %s\n", recvbuf);
