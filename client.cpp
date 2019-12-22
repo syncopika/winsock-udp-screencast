@@ -25,6 +25,7 @@
 #define WINDOW_HEIGHT 400
 
 struct ThreadParams {
+	std::string ipAddr;
 	SDL_Renderer* renderer;
 	bool* endThread;
 };
@@ -74,7 +75,8 @@ void talkToServer(ThreadParams params){
 	ZeroMemory(&servAddr, sizeof(servAddr));
 	servAddr.sin_family = AF_INET;
 
-	const char* theIp = "127.0.0.1";
+	const char* theIp = params.ipAddr.c_str();// = "127.0.0.1"; // pass in ip as arg to client?
+	
 	int size = sizeof(servAddr);
 	iResult = WSAStringToAddressA((LPSTR)theIp, AF_INET, NULL, (struct sockaddr *)&servAddr, &size);
 	if(iResult != 0){
@@ -130,6 +132,7 @@ void talkToServer(ThreadParams params){
 				printf("sendto failed.\n");
 				exit(1);
 			}
+			std::cout << "sent hello msg" << std::endl;
 			sentInitMsg = true;
 		}
 		
@@ -173,7 +176,6 @@ void talkToServer(ThreadParams params){
 						// https://stackoverflow.com/questions/7593086/why-use-non-member-begin-and-end-functions-in-c11
 						int currPacketNum = pqueue.top().first;
 						std::cout << "packet number: " << currPacketNum << std::endl;
-						//std::cout << "total bytes collected so far: " << pixelData.size() << std::endl;
 						uint8_t* data = pqueue.top().second;
 						
 						if(currPacketNum != lastPacketNum + 1){
@@ -246,7 +248,7 @@ void talkToServer(ThreadParams params){
 					// reset
 					packetsReceived = 0;
 					
-					// get new frame 
+					// get new frame from server
 					int bytesSent = sendto(connectSocket, msg, str.length(), 0, (struct sockaddr *)&servAddr, size);
 					if(bytesSent < 0){
 						printf("sendto for new frame failed.\n");
@@ -328,6 +330,12 @@ int main(int argc, char *argv[]){
 	
 	ThreadParams params;
 	params.renderer = renderer;
+	
+	std::string ip = "127.0.0.1";
+	if(argc == 2){
+		ip = std::string(argv[1]);
+	}
+	params.ipAddr = ip;
 	
 	//while(1){
 	while(!quit){

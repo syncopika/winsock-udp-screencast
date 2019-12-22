@@ -228,7 +228,7 @@ int main(void){
 	
 	while(1){
 
-		ZeroMemory(recvbuf, recvbuflen);
+		//ZeroMemory(recvbuf, recvbuflen);
 		
 		// get the new data 
 		// expect a client to ask for the current screenshot
@@ -250,21 +250,26 @@ int main(void){
 			
 			if(recvbuf[0] == 'h'){
 				
+				printf("got a request from a client!\n");
+				
 				sendResult = sendto(serverSocket, recvbuf, recvbuflen, 0, (struct sockaddr *)&clientAddr, clientAddrLen);
 				if(sendResult < 0){
 					printf("sendto failed.\n");
 					exit(1);
 				}
-				
-				ZeroMemory(recvbuf, recvbuflen);
 		
 				// send curr frame client
 				sendCurrentScreencap(frameCount, serverSocket, (struct sockaddr *)&clientAddr, clientAddrLen);
+				frameCount++;
 			}
 		}
 		
+		// when a client closes and stops talking to the server and a new client instance is started and 
+		// tries to talk to the same server that's still running, it looks like it takes a while for the server to notice a new 
+		// hello message to start sending over images (more than the sleep time). do I need to clear something?
+		// is there something wrong on the client end?
 		
-		frameCount++;
+		ZeroMemory(recvbuf, recvbuflen);
 		Sleep(1000);
 	}
 	
