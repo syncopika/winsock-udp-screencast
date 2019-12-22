@@ -42,7 +42,7 @@ BitmapData* screenCapture(){
 	int height = y2 - y1;
 
     HDC hDc = CreateCompatibleDC(0);
-    HBITMAP hBmp = CreateCompatibleBitmap(GetDC(0), width, height);
+    HBITMAP hBmp = CreateCompatibleBitmap(GetDC(NULL), width, height);
     SelectObject(hDc, hBmp);
     BitBlt(hDc, 0, 0, width, height, GetDC(0), 0, 0, SRCCOPY);
 	
@@ -100,11 +100,11 @@ void socketErrorCheck(int returnValue, SOCKET socketToClose, const char* action)
 }
 
 
-UINT8* makeScreenCapBuffer(UINT8* data, int dataStart, int chunkNum, int frameId, int dataSize){
+uint8_t* makeScreenCapBuffer(uint8_t* data, int dataStart, int chunkNum, int frameId, int dataSize){
 	// we need 6 bytes to indicate the message type, packet num, the frame id of the frame this fragment belongs to,
 	// and the size of the pixel data 
 	std::cout << "need to send: " << dataSize << " bytes for packet: " << chunkNum << ", frame id: " << frameId << std::endl;
-	UINT8* buf = new UINT8[6+dataSize];
+	uint8_t* buf = new uint8_t[6+dataSize];
 	buf[0] = 'p'; // p for packet?
 	buf[1] = chunkNum;
 	buf[2] = 'f'; // f for frame id 
@@ -119,7 +119,7 @@ UINT8* makeScreenCapBuffer(UINT8* data, int dataStart, int chunkNum, int frameId
 void sendCurrentScreencap(int frameIdNum, int sendSocket, struct sockaddr* clientAddr, int clientAddrLen){
 		
 	BitmapData* screenCap = screenCapture();
-	UINT8* pixels = (UINT8*)screenCap->Scan0;
+	uint8_t* pixels = (uint8_t*)screenCap->Scan0;
 	
 	std::cout << "stride: " << screenCap->Stride << std::endl;
 	std::cout << "width: " << screenCap->Width << std::endl;
@@ -129,7 +129,7 @@ void sendCurrentScreencap(int frameIdNum, int sendSocket, struct sockaddr* clien
 	int totalBytes = screenCap->Stride * screenCap->Height;
 	std::cout << "total bytes of image: " << totalBytes << std::endl;
 	
-	UINT8* pixelBuffer = new UINT8[totalBytes];
+	uint8_t* pixelBuffer = new uint8_t[totalBytes];
 	memcpy(pixelBuffer, pixels, totalBytes);
 	
 	// how many udp packets do we need to send that make up the image 
@@ -159,7 +159,7 @@ void sendCurrentScreencap(int frameIdNum, int sendSocket, struct sockaddr* clien
 	for(int i = 0; i < numPacketsToSend; i++){
 		int dataSize = DEFAULT_BUFLEN > totalBytesRem ? totalBytesRem : DEFAULT_BUFLEN; 
 		
-		UINT8* buffer = makeScreenCapBuffer(pixelBuffer, dataStart, i+1, frameIdNum, dataSize);
+		uint8_t* buffer = makeScreenCapBuffer(pixelBuffer, dataStart, i+1, frameIdNum, dataSize);
 		sendResult = sendto(sendSocket, (char *)buffer, dataSize+6, 0, clientAddr, clientAddrLen);
 		if(sendResult < 0){
 			printf("sendto failed.\n");
@@ -170,11 +170,6 @@ void sendCurrentScreencap(int frameIdNum, int sendSocket, struct sockaddr* clien
 		dataStart += dataSize;
 		std::cout << "rem bytes to send: " << totalBytesRem << std::endl;
 		delete buffer;
-	}
-	
-	for(int i = 0; i < 10; i++){
-		//std::cout << "pixel " << i << ": " << pixels[i] << std::endl;
-		//printf("pixel %d: %u\n", i, pixelBuffer[i]);
 	}
 	
 	std::cout << "--------------" << std::endl;

@@ -24,35 +24,38 @@
 #define WINDOW_WIDTH 600
 #define WINDOW_HEIGHT 400
 
+struct ThreadParams {
+	SDL_Renderer* renderer;
+	bool* endThread;
+};
+
 void logSDLError(std::ostream &os, const std::string &msg){
 	os << msg << " error: " << SDL_GetError() << std::endl;
 }
 
-int main(int argc, char *argv[]){
+
+void talkToServer(ThreadParams params){
+	SDL_Renderer* renderer = params.renderer;
 	
-	if(SDL_Init(SDL_INIT_VIDEO) != 0){
-		logSDLError(std::cout, "SDL_Init Error: ");
-		return 1;
-	}
+	// functor for comparing for priority_queue 
+	struct Compare{
+		bool operator()(const std::pair<int, uint8_t*> a, const std::pair<int, uint8_t*> b){
+			return a.first > b.first; // why isn't it a.first < b.first?
+									  // I think it's because priority_queue by default sorts by descending order.
+		}
+	};
 	
-	printf("starting client...\n");
+	// buffer to hold all pixel data 
+	// use a priority queue (or min heap) to keep order of the packets since they could come in 
+	// out of order. 
+	// use a pair to store the data like this: (packetNum, pixelDataArray) in the queue. sort by packetNum.
+	// https://stackoverflow.com/questions/37318537/deciding-priority-in-case-of-pairint-int-inside-priority-queue
+	// https://stackoverflow.com/questions/12508496/comparators-in-stl
+	// https://stackoverflow.com/questions/356950/what-are-c-functors-and-their-uses
+	std::priority_queue<std::pair<int, uint8_t*>, 
+						std::vector<std::pair<int, uint8_t*>>,
+						Compare> pqueue;
 	
-	// create a window 
-	SDL_Window *window = SDL_CreateWindow("winsock-udp-screencast", 100, 100, WINDOW_WIDTH, WINDOW_HEIGHT, SDL_WINDOW_SHOWN);
-	if(window == nullptr){
-		logSDLError(std::cout, "SDL_CreateWindow Error: ");
-		SDL_Quit();
-		return 1;
-	}
-	
-	// create the renderer to render the window with 
-	SDL_Renderer *renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
-	if(renderer == nullptr){
-		SDL_DestroyWindow(window);
-		logSDLError(std::cout,"SDL_CreateRenderer Error: ");
-		SDL_Quit();
-		return 1;
-	}
 	
 	// variables for networking
 	WSADATA wsaData;
@@ -64,7 +67,7 @@ int main(int argc, char *argv[]){
 	iResult = WSAStartup(MAKEWORD(2,2), &wsaData);
 	if(iResult != 0){
 		printf("WSAStartup failed: %d\n", iResult);
-		return 1;
+		exit(1);
 	}
 	
 	struct sockaddr_in servAddr;
@@ -85,7 +88,7 @@ int main(int argc, char *argv[]){
 	if(connectSocket == INVALID_SOCKET){
 		printf("socket() failed\n");
 		WSACleanup();
-		return 1;
+		exit(1);
 	}
 
 	// maybe move all this stuff to a separate thread?
@@ -95,25 +98,6 @@ int main(int argc, char *argv[]){
 	const char* msg = str.c_str();
 	
 	bool sentInitMsg = false;
-	
-	// functor for comparing for priority_queue 
-	struct Compare{
-		bool operator()(const std::pair<int, UINT8*> a, const std::pair<int, UINT8*> b){
-			return a.first > b.first; // why isn't it a.first < b.first?
-									  // I think it's because priority_queue by default sorts by descending order.
-		}
-	};
-	
-	// buffer to hold all pixel data 
-	// use a priority queue (or min heap) to keep order of the packets since they could come in 
-	// out of order. 
-	// use a pair to store the data like this: (packetNum, pixelDataArray) in the queue. sort by packetNum.
-	// https://stackoverflow.com/questions/37318537/deciding-priority-in-case-of-pairint-int-inside-priority-queue
-	// https://stackoverflow.com/questions/12508496/comparators-in-stl
-	// https://stackoverflow.com/questions/356950/what-are-c-functors-and-their-uses
-	std::priority_queue<std::pair<int, UINT8*>, 
-						std::vector<std::pair<int, UINT8*>>,
-						Compare> pqueue;
 	
 	int packetsToExpect = 0;
 	int packetsReceived = 0;
@@ -132,8 +116,10 @@ int main(int argc, char *argv[]){
 	// 60000 bytes of data except the last packet, which has 50000). this is beacause we hardcoded
 	// the width and height of the image, which is 600 and 400, respectively.
 	int dataSize = regularPacketDataSize;
-		
+	SDL_Texture* texBuf = nullptr;
+	
 	while(1){
+		
 		// clear the recv buffer 
 		ZeroMemory(recvbuf, recvbuflen);
 		
@@ -159,7 +145,7 @@ int main(int argc, char *argv[]){
 				packetsToExpect = (int)recvbuf[4];
 			}else if(recvbuf[0] == 'p'){
 				
-				UINT8* pixels = (UINT8*)recvbuf;
+				uint8_t* pixels = (uint8_t*)recvbuf;
 				
 				// packet chunk 
 				int packetNum = (int)pixels[1];
@@ -172,12 +158,11 @@ int main(int argc, char *argv[]){
 					lastFrameId = currFrameId;
 				}
 				
-				// if we get more than half the packets (probably rethink this later)
-				if((float)packetsReceived > (packetsToExpect / 2)){
+				// if we get most of the packets? (probably rethink this later)
+				if((float)packetsReceived >= (packetsToExpect - 3)){
 					
-					std::vector<UINT8> pixelData;
+					std::vector<uint8_t> pixelData;
 					std::cout << "got at least half the packets..." << std::endl;
-					
 					int lastPacketNum = 0;
 					
 					while(!pqueue.empty()){
@@ -189,13 +174,13 @@ int main(int argc, char *argv[]){
 						int currPacketNum = pqueue.top().first;
 						std::cout << "packet number: " << currPacketNum << std::endl;
 						//std::cout << "total bytes collected so far: " << pixelData.size() << std::endl;
-						UINT8* data = pqueue.top().second;
+						uint8_t* data = pqueue.top().second;
 						
 						if(currPacketNum != lastPacketNum + 1){
 							for(int i = lastPacketNum+1; i < currPacketNum; i++){
 								std::cout << "filling in data for missing packet num: " << i << std::endl;
 								// fill with rgba(255,255,255,255) for any missing packets between last packet num and current 
-								UINT8* filler = new UINT8[dataSize];
+								uint8_t* filler = new uint8_t[dataSize];
 								memset(filler, 255, dataSize);
 								pixelData.insert(pixelData.end(), filler, filler+dataSize);
 								delete[] filler;
@@ -220,42 +205,43 @@ int main(int argc, char *argv[]){
 					std::cout << "num packets expected: " << packetsToExpect << std::endl;
 					for(int i = lastPacketNum+1; i <= packetsToExpect; i++){
 						std::cout << "filling in data for missing packet num after last packet: " << i << std::endl;
-						UINT8* filler = new UINT8[dataSize];
+						uint8_t* filler = new uint8_t[dataSize];
 						memset(filler, 255, dataSize);
 						pixelData.insert(pixelData.end(), filler, filler+dataSize);
 						delete[] filler;
 					}
 					
 					std::cout << "--------------" << std::endl;
-					// form image?
-					// use sdl to create a surface with the pixel data.
-					// turn the surface into a texture. put texture in renderer
+					
+					// form image
 					// https://stackoverflow.com/questions/21007329/what-is-an-sdl-renderer
 					// try this: https://gamedev.stackexchange.com/questions/102490/fastest-way-to-render-image-data-from-buffer
 					// this might help too? https://www.gamedev.net/forums/topic/683956-blit-a-byte-array-of-pixels-to-screen-in-sdl-fast/
 					std::cout << "the total size of the image data in bytes: " << pixelData.size() << std::endl;
 					uint8_t* imageData = new uint8_t[(int)pixelData.size()];
 					
-					SDL_Texture* texBuf = SDL_CreateTexture(
-											renderer,
-											SDL_PIXELFORMAT_ARGB8888,
-											SDL_TEXTUREACCESS_STREAMING,
-											WINDOW_WIDTH,
-											WINDOW_HEIGHT);
+					if(texBuf == nullptr){
+						texBuf = SDL_CreateTexture(
+									renderer,
+									SDL_PIXELFORMAT_ARGB8888,
+									SDL_TEXTUREACCESS_STREAMING,
+									WINDOW_WIDTH,
+									WINDOW_HEIGHT);
+					}
 					
 					int pitch = WINDOW_WIDTH * 4; // 4 bytes per pixel
 					SDL_LockTexture(texBuf, NULL, (void**)&imageData, &pitch);
 					
-					// try update instead of lock? https://forums.libsdl.org/viewtopic.php?t=9728
 					// fill the texture pixel buffer
 					memcpy(imageData, (uint8_t *)&pixelData[0], (int)pixelData.size());
 					
+					// try to clear the previous frame so we don't carry over any drawn pixels 
+					// https://gamedev.stackexchange.com/questions/131252/how-do-i-clear-streaming-textures-in-sdl
 					SDL_UnlockTexture(texBuf);
 					SDL_RenderCopy(renderer, texBuf, NULL, NULL);
 					SDL_RenderPresent(renderer);
 					
 					delete[] imageData;
-					SDL_DestroyTexture(texBuf);
 					
 					// reset
 					packetsReceived = 0;
@@ -273,16 +259,15 @@ int main(int argc, char *argv[]){
 					// need to make a copy of the received data 
 					// note that this is hardcoded right now based on assumptions of the image data! (assumes 600 x 400 window)
 					//int dataSize = regularPacketDataSize;
-					UINT8* pixelsCopy = new UINT8[dataSize];
+					uint8_t* pixelsCopy = new uint8_t[dataSize];
 					memcpy(pixelsCopy, recvbuf+6, dataSize);
 					
-					std::pair<int, UINT8*> packetChunk(packetNum, pixelsCopy);
+					std::pair<int, uint8_t*> packetChunk(packetNum, pixelsCopy);
 					std::cout << "adding packet num: " << packetNum << " to queue" << " for frame id: " << currFrameId << std::endl;
 					pqueue.push(packetChunk); 
 					
 					packetsReceived++;
 				}
-				//std::cout << "--------------" << std::endl;
 				
 			}else{
 				// frame data. rebuild image from the chunks and display
@@ -294,14 +279,72 @@ int main(int argc, char *argv[]){
 		}else{
 			printf("recv failed: %d\n", WSAGetLastError());
 			exit(1);
-		}
-		
-		// don't sleep unless you want to lose packets on purpose...
-		//Sleep(200);
+		}	
+	}
+	SDL_DestroyTexture(texBuf);
+}
+
+
+// to be used in CreateThread
+DWORD WINAPI threadAction(LPVOID lpParam){
+	talkToServer(*(ThreadParams *)lpParam);
+	return 0;
+}
+
+
+int main(int argc, char *argv[]){
+	
+	if(SDL_Init(SDL_INIT_VIDEO) != 0){
+		logSDLError(std::cout, "SDL_Init Error: ");
+		return 1;
 	}
 	
-	WSACleanup();
+	printf("starting client...\n");
 	
+	// create a window 
+	SDL_Window* window = SDL_CreateWindow("winsock-udp-screencast", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, WINDOW_WIDTH, WINDOW_HEIGHT, SDL_WINDOW_SHOWN);
+	if(window == nullptr){
+		logSDLError(std::cout, "SDL_CreateWindow Error: ");
+		SDL_Quit();
+		return 1;
+	}
+	
+	// create the renderer to render the window with 
+	// pass this as an argument to the thread handling the communication with the server
+	SDL_Renderer* renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
+	if(renderer == nullptr){
+		SDL_DestroyWindow(window);
+		logSDLError(std::cout,"SDL_CreateRenderer Error: ");
+		SDL_Quit();
+		return 1;
+	}
+	
+	/***
+		START EVENT LOOP 
+	***/
+	SDL_Event event;
+	bool quit = false;
+	bool spawnThread = false;
+	
+	ThreadParams params;
+	params.renderer = renderer;
+	
+	//while(1){
+	while(!quit){
+		while(SDL_PollEvent(&event)){
+			if(event.type == SDL_QUIT){
+				quit = true;
+			}
+		}
+		if(!spawnThread){
+			// make sure this only occurs once!
+			CreateThread(NULL, 0, threadAction, (void *)&params, 0, 0);	
+			spawnThread = true;
+		}
+	}
+	
+	// cleanup
+	WSACleanup();
 	SDL_DestroyRenderer(renderer);
 	SDL_DestroyWindow(window);
 	SDL_Quit();
