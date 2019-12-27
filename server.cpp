@@ -29,14 +29,15 @@ https://docs.microsoft.com/en-us/windows/win32/medfound/image-stride
 using namespace Gdiplus;
 
 // get pixel data of screen
+// let's try taking a whole screen capture then resizing
+// https://stackoverflow.com/questions/4041657/gdiplus-scale-bitmap
 BitmapData* screenCapture(){
 	
 	int x1 = 0; // top left x coord 
 	int y1 = 0; // top left y coord
 	
-	// might have to resize full screen bitmap later... just get it working for now
-	int x2 = 600; //GetSystemMetrics(SM_CXSCREEN); // screen bottom right x coord 
-	int y2 = 400; //GetSystemMetrics(SM_CYSCREEN); // screen bottom right y coord 
+	int x2 = GetSystemMetrics(SM_CXSCREEN); // screen bottom right x coord //600
+	int y2 = GetSystemMetrics(SM_CYSCREEN); // screen bottom right y coord //400
 	
 	int width = x2 - x1;
 	int height = y2 - y1;
@@ -62,12 +63,26 @@ BitmapData* screenCapture(){
 		DrawIconEx(hDc, cursorX, cursorY, screenCursor.hCursor, cursorBMP.bmWidth, cursorBMP.bmHeight, 0, NULL, DI_NORMAL);
 	}
 	
-    // return the pixel data from the bitmap
+	// resize bitmap 
 	Bitmap* bitmap = Bitmap::FromHBITMAP(hBmp, NULL);
-	BitmapData* bmpData = new BitmapData;
-	Rect rect(0, 0, width, height);
-    bitmap->LockBits(&rect, ImageLockModeRead, PixelFormat32bppARGB, bmpData);
+	float xScaleFactor = (float)600 / bitmap->GetWidth();
+	float yScaleFactor = (float)400 / bitmap->GetHeight();
+
+	Image* temp = new Bitmap(600, 400);
+	Graphics g(temp);
 	
+	g.ScaleTransform(xScaleFactor, yScaleFactor);
+	g.DrawImage(bitmap, 0, 0);
+	Bitmap* rescaledBitmap = dynamic_cast<Bitmap*>(temp);
+	std::cout << "rescaled bitmap height: " << rescaledBitmap->GetHeight() << std::endl;
+	std::cout << "rescaled bitmap width: " << rescaledBitmap->GetWidth() << std::endl;
+	
+    // return the pixel data from the bitmap
+	BitmapData* bmpData = new BitmapData;
+	Rect rect(0, 0, 600, 400);
+    rescaledBitmap->LockBits(&rect, ImageLockModeRead, PixelFormat32bppARGB, bmpData);
+	
+	DeleteObject(temp);
 	DeleteObject(bitmap);
 	DeleteObject(hBmp);
 	
@@ -172,6 +187,7 @@ void sendCurrentScreencap(int frameIdNum, int sendSocket, struct sockaddr* clien
 		delete buffer;
 	}
 	
+	std::cout << "sent all packets for frame: " << frameIdNum << std::endl;
 	std::cout << "--------------" << std::endl;
 	
 	delete pixelBuffer;

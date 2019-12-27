@@ -161,8 +161,24 @@ void talkToServer(ThreadParams params){
 					lastFrameId = currFrameId;
 				}
 				
+				if(currFrameId == lastFrameId){
+					// add the current packet being looked at to the priority queue
+					// need to make a copy of the received data 
+					// note that this is hardcoded right now based on assumptions of the image data! (assumes 600 x 400 window)
+					//int dataSize = regularPacketDataSize;
+					uint8_t* pixelsCopy = new uint8_t[dataSize];
+					memcpy(pixelsCopy, recvbuf+6, dataSize);
+					
+					std::pair<int, uint8_t*> packetChunk(packetNum, pixelsCopy);
+					std::cout << "adding packet num: " << packetNum << " to queue" << " for frame id: " << currFrameId << std::endl;
+					pqueue.push(packetChunk); 
+					
+					packetsReceived++;
+				}
+				
 				// if we get most of the packets? (probably rethink this later)
-				if((float)packetsReceived >= (packetsToExpect - 3)){
+				// just have an alarm set up if hanging more than 2 sec?
+				if((float)packetsReceived == (packetsToExpect)){
 					
 					std::vector<uint8_t> pixelData;
 					std::cout << "got at least half the packets..." << std::endl;
@@ -175,7 +191,7 @@ void talkToServer(ThreadParams params){
 						// neat! http://forums.codeguru.com/showthread.php?509825-std-vectors-Append-chunk-of-data-to-the-end
 						// https://stackoverflow.com/questions/7593086/why-use-non-member-begin-and-end-functions-in-c11
 						int currPacketNum = pqueue.top().first;
-						std::cout << "packet number: " << currPacketNum << std::endl;
+						//std::cout << "packet number: " << currPacketNum << std::endl;
 						uint8_t* data = pqueue.top().second;
 						
 						if(currPacketNum != lastPacketNum + 1){
@@ -255,21 +271,6 @@ void talkToServer(ThreadParams params){
 						exit(1);
 					}
 				} // end process image 
-				
-				if(currFrameId == lastFrameId){
-					// add the current packet being looked at to the priority queue
-					// need to make a copy of the received data 
-					// note that this is hardcoded right now based on assumptions of the image data! (assumes 600 x 400 window)
-					//int dataSize = regularPacketDataSize;
-					uint8_t* pixelsCopy = new uint8_t[dataSize];
-					memcpy(pixelsCopy, recvbuf+6, dataSize);
-					
-					std::pair<int, uint8_t*> packetChunk(packetNum, pixelsCopy);
-					std::cout << "adding packet num: " << packetNum << " to queue" << " for frame id: " << currFrameId << std::endl;
-					pqueue.push(packetChunk); 
-					
-					packetsReceived++;
-				}
 				
 			}else{
 				// frame data. rebuild image from the chunks and display
