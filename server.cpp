@@ -8,7 +8,6 @@ https://docs.microsoft.com/en-us/windows/win32/medfound/image-stride
 
 */
 
-
 #define _WIN32_WINNT 0x501 // https://stackoverflow.com/questions/36420044/winsock-server-and-client-c-code-getaddrinfo-was-not-declared-in-this-scope
 
 #include <windows.h>
@@ -25,12 +24,13 @@ https://docs.microsoft.com/en-us/windows/win32/medfound/image-stride
 
 #define DEFAULT_PORT 2000 // for some reason 27015 doesn't work!? (even though it's used in the microsoft tutorial)
 #define DEFAULT_BUFLEN 60000
+#define CLIENT_WIDTH 600  // the width of the client application screen 
+#define CLIENT_HEIGHT 400 // the height of the client application screen 
 
 using namespace Gdiplus;
 
 // get pixel data of screen
 // let's try taking a whole screen capture then resizing
-// https://stackoverflow.com/questions/4041657/gdiplus-scale-bitmap
 BitmapData* screenCapture(){
 	
 	int x1 = 0; // top left x coord 
@@ -65,21 +65,19 @@ BitmapData* screenCapture(){
 	
 	// resize bitmap 
 	Bitmap* bitmap = Bitmap::FromHBITMAP(hBmp, NULL);
-	float xScaleFactor = (float)600 / bitmap->GetWidth();
-	float yScaleFactor = (float)400 / bitmap->GetHeight();
+	float xScaleFactor = (float)CLIENT_WIDTH / bitmap->GetWidth();
+	float yScaleFactor = (float)CLIENT_HEIGHT / bitmap->GetHeight();
 
-	Image* temp = new Bitmap(600, 400);
+	Image* temp = new Bitmap(CLIENT_WIDTH, CLIENT_HEIGHT);
 	Graphics g(temp);
 	
 	g.ScaleTransform(xScaleFactor, yScaleFactor);
 	g.DrawImage(bitmap, 0, 0);
-	Bitmap* rescaledBitmap = dynamic_cast<Bitmap*>(temp);
-	std::cout << "rescaled bitmap height: " << rescaledBitmap->GetHeight() << std::endl;
-	std::cout << "rescaled bitmap width: " << rescaledBitmap->GetWidth() << std::endl;
+	Bitmap* rescaledBitmap = dynamic_cast<Bitmap*>(temp); // the image is actually a bitmap
 	
     // return the pixel data from the bitmap
 	BitmapData* bmpData = new BitmapData;
-	Rect rect(0, 0, 600, 400);
+	Rect rect(0, 0, CLIENT_WIDTH, CLIENT_HEIGHT);
     rescaledBitmap->LockBits(&rect, ImageLockModeRead, PixelFormat32bppARGB, bmpData);
 	
 	DeleteObject(temp);
@@ -126,7 +124,7 @@ uint8_t* makeScreenCapBuffer(uint8_t* data, int dataStart, int chunkNum, int fra
 	buf[3] = frameId;
 	buf[4] = 'd'; // d for data 
 	buf[5] = 1; //dataSize; - whoops, I'm an idiot. this is a UNIT8 buffer, which means the max number a byte can represent is 255.
-				// so 60000 definitely cannot be represented in a byte lol.
+				// so 60000 definitely cannot be represented in a byte lol. Use a 1 as a placeholder for now.
 	memcpy(buf+6, data+dataStart, dataSize);
 	return buf;	
 }

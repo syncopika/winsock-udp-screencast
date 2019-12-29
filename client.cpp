@@ -11,53 +11,44 @@
 #include <queue>
 #include <vector>
 
-// running into compilation error about WinMain not having defined reference
-// need to define SDL_MAIN_HANDLED
-// this is interesting? https://djrollins.com/2016/10/02/sdl-on-windows/
-//#define SDL_MAIN_HANDLED
 #include <SDL2/SDL.h>
 
 #define DEFAULT_PORT 2000
 #define DEFAULT_BUFLEN 60000
 #define MSG_HEADER 6 // this is the header that comes with image data chunk packets 
-
 #define WINDOW_WIDTH 600
 #define WINDOW_HEIGHT 400
 
+// important info to pass to the thread (which handles server communication)
 struct ThreadParams {
 	std::string ipAddr;
 	SDL_Renderer* renderer;
 	bool* endThread;
 };
 
+// functor for comparing for priority_queue 
+struct Compare{
+	bool operator()(const std::pair<int, uint8_t*> a, const std::pair<int, uint8_t*> b){
+		return a.first > b.first; // why isn't it a.first < b.first?
+								  // I think it's because priority_queue by default sorts by descending order.
+	}
+};
+
 void logSDLError(std::ostream &os, const std::string &msg){
 	os << msg << " error: " << SDL_GetError() << std::endl;
 }
 
-
 void talkToServer(ThreadParams params){
 	SDL_Renderer* renderer = params.renderer;
-	
-	// functor for comparing for priority_queue 
-	struct Compare{
-		bool operator()(const std::pair<int, uint8_t*> a, const std::pair<int, uint8_t*> b){
-			return a.first > b.first; // why isn't it a.first < b.first?
-									  // I think it's because priority_queue by default sorts by descending order.
-		}
-	};
 	
 	// buffer to hold all pixel data 
 	// use a priority queue (or min heap) to keep order of the packets since they could come in 
 	// out of order. 
 	// use a pair to store the data like this: (packetNum, pixelDataArray) in the queue. sort by packetNum.
-	// https://stackoverflow.com/questions/37318537/deciding-priority-in-case-of-pairint-int-inside-priority-queue
-	// https://stackoverflow.com/questions/12508496/comparators-in-stl
-	// https://stackoverflow.com/questions/356950/what-are-c-functors-and-their-uses
 	std::priority_queue<std::pair<int, uint8_t*>, 
 						std::vector<std::pair<int, uint8_t*>>,
 						Compare> pqueue;
-	
-	
+
 	// variables for networking
 	WSADATA wsaData;
 	int iResult;
@@ -92,7 +83,15 @@ void talkToServer(ThreadParams params){
 		WSACleanup();
 		exit(1);
 	}
-
+	
+	// set up time stuff for select timeout
+	timeval timeout;
+	timeout.tv_sec = 2;
+	timeout.tv_usec = 0;
+	fd_set fds;
+	FD_ZERO(&fds);
+	FD_SET(connectSocket, &fds);
+	
 	// maybe move all this stuff to a separate thread?
 	// then in this main thread we can handle some basic SDL2 window stuff, like closing out the window
 	printf("preparing to message server...\n");
@@ -103,24 +102,19 @@ void talkToServer(ThreadParams params){
 	
 	int packetsToExpect = 0;
 	int packetsReceived = 0;
-	int regularPacketDataSize = 60000; // this is specific to the current parameters (image coming in is 960000 bytes)
-	//int lastPacketDataSize = 0;
 	int lastFrameId = -1;
-	
-	// how do we know when we should process all the chunks of a frame? we should expect packet loss,
-	// so we don't really know when we've seen the last packet of a frame?
-	// since on the server side we have a sleep in between frames, is it very unlikely that a packet for the 
-	// next frame could slip in with the packets of the current frame? so we can look at frame id maybe?
+	int packetNum;
+	int currFrameId;
 	
 	// we can cheat a little for now. we know exactly how big the image is coming in,
 	// so we know exactly how many pixel data bytes can go into each packet. 
 	// for now, let's use this knowledge (i.e. there should be 16 packets, each one with 
 	// 60000 bytes of data except the last packet, which has 50000). this is beacause we hardcoded
 	// the width and height of the image, which is 600 and 400, respectively.
-	int dataSize = regularPacketDataSize;
+	int dataSize = DEFAULT_BUFLEN; // this is specific to the current parameters (image coming in total size is 960000 bytes)
 	SDL_Texture* texBuf = nullptr;
 	
-	while(1){
+	while(true){
 		
 		// clear the recv buffer 
 		ZeroMemory(recvbuf, recvbuflen);
@@ -137,152 +131,147 @@ void talkToServer(ThreadParams params){
 		}
 		
 		// receive msg
-		rtnVal = recvfrom(connectSocket, recvbuf, recvbuflen, 0, (struct sockaddr *)&servAddr, &size);
-		if(rtnVal > 0){	
-			// check recvbuf 
-			if(recvbuf[0] == 'i'){
-				printf("Got data about the next image frame: %s\n", recvbuf);
-				printf("num packets to expect for image: %d\n", (int)recvbuf[4]);
-				std::cout << "--------------" << std::endl;
-				
-				packetsToExpect = (int)recvbuf[4];
-			}else if(recvbuf[0] == 'p'){
-				
-				uint8_t* pixels = (uint8_t*)recvbuf;
-				
-				// packet chunk 
-				int packetNum = (int)pixels[1];
-				int currFrameId = (int)pixels[3];
-				//std::cout << "frame id: " << (int)pixels[3] << std::endl;
-				//std::cout << "data size for this packet: " << (int)pixels[5] << std::endl;
-				//std::cout << "first byte of data: " << (int)pixels[6] << std::endl;
-				
-				if(lastFrameId == -1){
-					lastFrameId = currFrameId;
-				}
-				
-				if(currFrameId == lastFrameId){
-					// add the current packet being looked at to the priority queue
-					// need to make a copy of the received data 
-					// note that this is hardcoded right now based on assumptions of the image data! (assumes 600 x 400 window)
-					//int dataSize = regularPacketDataSize;
-					uint8_t* pixelsCopy = new uint8_t[dataSize];
-					memcpy(pixelsCopy, recvbuf+6, dataSize);
-					
-					std::pair<int, uint8_t*> packetChunk(packetNum, pixelsCopy);
-					std::cout << "adding packet num: " << packetNum << " to queue" << " for frame id: " << currFrameId << std::endl;
-					pqueue.push(packetChunk); 
-					
-					packetsReceived++;
-				}
-				
-				// if we get most of the packets? (probably rethink this later)
-				// just have an alarm set up if hanging more than 2 sec?
-				if((float)packetsReceived == (packetsToExpect)){
-					
-					std::vector<uint8_t> pixelData;
-					std::cout << "got at least half the packets..." << std::endl;
-					int lastPacketNum = 0;
-					
-					while(!pqueue.empty()){
-						
-						// collect all the data for the image
-						
-						// neat! http://forums.codeguru.com/showthread.php?509825-std-vectors-Append-chunk-of-data-to-the-end
-						// https://stackoverflow.com/questions/7593086/why-use-non-member-begin-and-end-functions-in-c11
-						int currPacketNum = pqueue.top().first;
-						//std::cout << "packet number: " << currPacketNum << std::endl;
-						uint8_t* data = pqueue.top().second;
-						
-						if(currPacketNum != lastPacketNum + 1){
-							for(int i = lastPacketNum+1; i < currPacketNum; i++){
-								std::cout << "filling in data for missing packet num: " << i << std::endl;
-								// fill with rgba(255,255,255,255) for any missing packets between last packet num and current 
-								uint8_t* filler = new uint8_t[dataSize];
-								memset(filler, 255, dataSize);
-								pixelData.insert(pixelData.end(), filler, filler+dataSize);
-								delete[] filler;
-							}
-						}
-						
-						// this is the current packet's data
-						pixelData.insert(pixelData.end(), data, data+dataSize);
-
-						delete[] data;
-						lastPacketNum = currPacketNum;
-						pqueue.pop();
-						
-						// this means we won't look at any more packets that might've come in after 
-						// we processed this frame. this step forces the priority queue to only add
-						// packets for the next frame, 
-						lastFrameId = currFrameId+1 % 100;
-					}
-					
-					// if missing last packet, fill in 
-					std::cout << "lastPacketNum seen: " << lastPacketNum << std::endl;
-					std::cout << "num packets expected: " << packetsToExpect << std::endl;
-					for(int i = lastPacketNum+1; i <= packetsToExpect; i++){
-						std::cout << "filling in data for missing packet num after last packet: " << i << std::endl;
-						uint8_t* filler = new uint8_t[dataSize];
-						memset(filler, 255, dataSize);
-						pixelData.insert(pixelData.end(), filler, filler+dataSize);
-						delete[] filler;
-					}
-					
+		// this is blocking, so checking a before and now time difference is useless to deal with the problem of lost packets.
+		if(select(0, &fds, 0, 0, &timeout) == 0){
+			// we got a timeout
+			std::cout << "socket recvfrom timed out. you should process whatever data is in the priority queue." << std::endl;
+			// TODO: process pqueue
+		}else{
+			rtnVal = recvfrom(connectSocket, recvbuf, recvbuflen, 0, (struct sockaddr *)&servAddr, &size);
+			if(rtnVal > 0){	
+				// check recvbuf 
+				if(recvbuf[0] == 'i'){
+					printf("Got data about the next image frame: %s\n", recvbuf);
+					printf("num packets to expect for image: %d\n", (int)recvbuf[4]);
 					std::cout << "--------------" << std::endl;
 					
-					// form image
-					// https://stackoverflow.com/questions/21007329/what-is-an-sdl-renderer
-					// try this: https://gamedev.stackexchange.com/questions/102490/fastest-way-to-render-image-data-from-buffer
-					// this might help too? https://www.gamedev.net/forums/topic/683956-blit-a-byte-array-of-pixels-to-screen-in-sdl-fast/
-					std::cout << "the total size of the image data in bytes: " << pixelData.size() << std::endl;
-					uint8_t* imageData = new uint8_t[(int)pixelData.size()];
+					packetsToExpect = (int)recvbuf[4];
+				}else if(recvbuf[0] == 'p'){
 					
-					if(texBuf == nullptr){
-						texBuf = SDL_CreateTexture(
-									renderer,
-									SDL_PIXELFORMAT_ARGB8888,
-									SDL_TEXTUREACCESS_STREAMING,
-									WINDOW_WIDTH,
-									WINDOW_HEIGHT);
+					uint8_t* pixels = (uint8_t*)recvbuf;
+					
+					// packet chunk 
+					packetNum = (int)pixels[1];
+					currFrameId = (int)pixels[3];
+					//std::cout << "frame id: " << (int)pixels[3] << std::endl;
+					//std::cout << "data size for this packet: " << (int)pixels[5] << std::endl;
+					//std::cout << "first byte of data: " << (int)pixels[6] << std::endl;
+					
+					if(lastFrameId == -1){
+						lastFrameId = currFrameId;
 					}
 					
-					int pitch = WINDOW_WIDTH * 4; // 4 bytes per pixel
-					SDL_LockTexture(texBuf, NULL, (void**)&imageData, &pitch);
-					
-					// fill the texture pixel buffer
-					memcpy(imageData, (uint8_t *)&pixelData[0], (int)pixelData.size());
-					
-					// try to clear the previous frame so we don't carry over any drawn pixels 
-					// https://gamedev.stackexchange.com/questions/131252/how-do-i-clear-streaming-textures-in-sdl
-					SDL_UnlockTexture(texBuf);
-					SDL_RenderCopy(renderer, texBuf, NULL, NULL);
-					SDL_RenderPresent(renderer);
-					
-					delete[] imageData;
-					
-					// reset
-					packetsReceived = 0;
-					
-					// get new frame from server
-					int bytesSent = sendto(connectSocket, msg, str.length(), 0, (struct sockaddr *)&servAddr, size);
-					if(bytesSent < 0){
-						printf("sendto for new frame failed.\n");
-						exit(1);
+					if(currFrameId == lastFrameId){
+						// add the current packet being looked at to the priority queue
+						// need to make a copy of the received data 
+						// note that this is hardcoded right now based on assumptions of the image data! (assumes 600 x 400 window)
+						uint8_t* pixelsCopy = new uint8_t[dataSize];
+						memcpy(pixelsCopy, recvbuf+6, dataSize);
+						
+						std::pair<int, uint8_t*> packetChunk(packetNum, pixelsCopy);
+						std::cout << "adding packet num: " << packetNum << " to queue" << " for frame id: " << currFrameId << std::endl;
+						pqueue.push(packetChunk); 
+						
+						packetsReceived++;
 					}
-				} // end process image 
-				
+
+					// maybe I should have the server keep sending packets non-stop and not have client request them?
+					if(packetsReceived == packetsToExpect){
+						std::vector<uint8_t> pixelData;
+						int lastPacketNum = 0;
+						
+						while(!pqueue.empty()){
+							
+							// collect all the data for the image
+							int currPacketNum = pqueue.top().first;
+							uint8_t* data = pqueue.top().second;
+							
+							if(currPacketNum != lastPacketNum + 1){
+								for(int i = lastPacketNum+1; i < currPacketNum; i++){
+									std::cout << "filling in data for missing packet num: " << i << std::endl;
+									// fill with rgba(255,255,255,255) for any missing packets between last packet num and current 
+									uint8_t* filler = new uint8_t[dataSize];
+									memset(filler, 255, dataSize);
+									pixelData.insert(pixelData.end(), filler, filler+dataSize);
+									delete[] filler;
+								}
+							}
+							
+							// this is the current packet's data
+							pixelData.insert(pixelData.end(), data, data+dataSize);
+
+							delete[] data;
+							lastPacketNum = currPacketNum;
+							pqueue.pop();
+							
+							// this means we won't look at any more packets that might've come in after 
+							// we processed this frame. this step forces the priority queue to only add
+							// packets for the next frame, 
+							lastFrameId = currFrameId+1 % 100;
+						}
+						
+						// if missing last packet, fill in 
+						std::cout << "lastPacketNum seen: " << lastPacketNum << std::endl;
+						std::cout << "num packets expected: " << packetsToExpect << std::endl;
+						for(int i = lastPacketNum+1; i <= packetsToExpect; i++){
+							std::cout << "filling in data for missing packet num after last packet: " << i << std::endl;
+							uint8_t* filler = new uint8_t[dataSize];
+							memset(filler, 255, dataSize);
+							pixelData.insert(pixelData.end(), filler, filler+dataSize);
+							delete[] filler;
+						}
+						
+						std::cout << "--------------" << std::endl;
+						
+						// form image
+						std::cout << "the total size of the image data in bytes: " << pixelData.size() << std::endl;
+						uint8_t* imageData = new uint8_t[(int)pixelData.size()];
+						
+						if(texBuf == nullptr){
+							texBuf = SDL_CreateTexture(
+										renderer,
+										SDL_PIXELFORMAT_ARGB8888,
+										SDL_TEXTUREACCESS_STREAMING,
+										WINDOW_WIDTH,
+										WINDOW_HEIGHT);
+						}
+						
+						int pitch = WINDOW_WIDTH * 4; // 4 bytes per pixel
+						SDL_LockTexture(texBuf, NULL, (void**)&imageData, &pitch);
+						
+						// fill the texture pixel buffer
+						memcpy(imageData, (uint8_t *)&pixelData[0], (int)pixelData.size());
+						
+						SDL_UnlockTexture(texBuf);
+						SDL_RenderCopy(renderer, texBuf, NULL, NULL);
+						SDL_RenderPresent(renderer);
+						
+						delete[] imageData;
+						
+						// reset
+						packetsReceived = 0;
+						
+						// get new frame from server
+						int bytesSent = sendto(connectSocket, msg, str.length(), 0, (struct sockaddr *)&servAddr, size);
+						if(bytesSent < 0){
+							printf("sendto for new frame failed.\n");
+							exit(1);
+						}
+
+					} // end process image 
+					
+				}else{
+					// frame data. rebuild image from the chunks and display
+					printf("Message received from server: %s\n", recvbuf);
+				}
+			}else if(rtnVal == 0){
+				printf("connection closed.\n");
+				exit(1);
 			}else{
-				// frame data. rebuild image from the chunks and display
-				printf("Message received from server: %s\n", recvbuf);
+				printf("recv failed: %d\n", WSAGetLastError());
+				exit(1);
 			}
-		}else if(rtnVal == 0){
-			printf("connection closed.\n");
-			exit(1);
-		}else{
-			printf("recv failed: %d\n", WSAGetLastError());
-			exit(1);
-		}	
+		}
 	}
 	SDL_DestroyTexture(texBuf);
 }
@@ -294,7 +283,9 @@ DWORD WINAPI threadAction(LPVOID lpParam){
 	return 0;
 }
 
-
+// try making a main menu to input ip addr 
+// https://gamedev.stackexchange.com/questions/72878/how-can-i-implement-a-main-menu
+// also quit option after communicating with server?
 int main(int argc, char *argv[]){
 	
 	if(SDL_Init(SDL_INIT_VIDEO) != 0){

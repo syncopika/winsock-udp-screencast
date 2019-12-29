@@ -1,1 +1,22 @@
 https://www.binarytides.com/udp-socket-programming-in-winsock/
+
+// this is interesting? https://djrollins.com/2016/10/02/sdl-on-windows/
+
+// relevant to client code
+http://forums.codeguru.com/showthread.php?509825-std-vectors-Append-chunk-of-data-to-the-end
+https://stackoverflow.com/questions/7593086/why-use-non-member-begin-and-end-functions-in-c11
+https://stackoverflow.com/questions/37318537/deciding-priority-in-case-of-pairint-int-inside-priority-queue
+https://stackoverflow.com/questions/12508496/comparators-in-stl
+https://stackoverflow.com/questions/356950/what-are-c-functors-and-their-uses
+https://stackoverflow.com/questions/21007329/what-is-an-sdl-renderer
+https://gamedev.stackexchange.com/questions/102490/fastest-way-to-render-image-data-from-buffer
+https://www.gamedev.net/forums/topic/683956-blit-a-byte-array-of-pixels-to-screen-in-sdl-fast/
+
+// relevant to server code
+https://stackoverflow.com/questions/4041657/gdiplus-scale-bitmap
+https://stackoverflow.com/questions/1163369/how-to-convert-gdis-image-into-bitmap
+
+// timeouts for recvfrom? 
+https://www.winsocketdotnetworkprogramming.com/winsock2programming/winsock2advancedcode1f.html
+https://stackoverflow.com/questions/6755637/recv-windows-socket-takes-infinite-time-how-to-timeout
+https://stackoverflow.com/questions/1824465/set-timeout-for-winsock-recvfrom
