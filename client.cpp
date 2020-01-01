@@ -210,7 +210,6 @@ void talkToServer(ThreadParams params){
 		}
 		
 		// receive msg
-		// this is blocking, so checking a before and now time difference is useless to deal with the problem of lost packets.
 		if(select(0, &fds, 0, 0, &timeout) == 0){
 			// we got a timeout
 			std::cout << "socket recvfrom timed out. process whatever data is in the priority queue." << std::endl;
@@ -227,6 +226,7 @@ void talkToServer(ThreadParams params){
 				exit(1);
 			}
 		}else{
+			// recvfrom blocks, so we need a timeout if we don't see all packets for the current frame
 			rtnVal = recvfrom(connectSocket, recvbuf, recvbuflen, 0, (struct sockaddr *)&servAddr, &size);
 			if(rtnVal > 0){	
 				// check recvbuf 
