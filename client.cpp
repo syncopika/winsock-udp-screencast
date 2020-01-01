@@ -34,7 +34,7 @@ struct Compare{
 	}
 };
 
-// can use this in 2 places
+// process image data stored in priority queue
 void processImageInQueue(std::priority_queue<std::pair<int, uint8_t*>, 
 						std::vector<std::pair<int, uint8_t*>>,
 						Compare>& pqueue, int& lastFrameId, int currFrameId, int packetsToExpect, int dataSize, SDL_Texture* texBuf, SDL_Renderer* renderer){
@@ -187,7 +187,6 @@ void talkToServer(ThreadParams params){
 	while(true){
 		
 		// set up time stuff for select timeout
-		// this stuff needs to be in this loop:
 		// https://stackoverflow.com/questions/21743231/winsock-selects-timeout-on-listening-socket-causing-every-subsequent-select-c
 		timeval timeout;
 		timeout.tv_sec = 2;
@@ -268,82 +267,13 @@ void talkToServer(ThreadParams params){
 
 					// maybe I should have the server keep sending packets non-stop and not have client request them?
 					if(packetsReceived == packetsToExpect){
-						std::vector<uint8_t> pixelData;
-						int lastPacketNum = 0;
 						
-						while(!pqueue.empty()){
-							
-							// collect all the data for the image
-							int currPacketNum = pqueue.top().first;
-							uint8_t* data = pqueue.top().second;
-							
-							if(currPacketNum != lastPacketNum + 1){
-								for(int i = lastPacketNum+1; i < currPacketNum; i++){
-									std::cout << "filling in data for missing packet num: " << i << std::endl;
-									// fill with rgba(255,255,255,255) for any missing packets between last packet num and current 
-									uint8_t* filler = new uint8_t[dataSize];
-									memset(filler, 255, dataSize);
-									pixelData.insert(pixelData.end(), filler, filler+dataSize);
-									delete[] filler;
-								}
-							}
-							
-							// this is the current packet's data
-							pixelData.insert(pixelData.end(), data, data+dataSize);
-
-							delete[] data;
-							lastPacketNum = currPacketNum;
-							pqueue.pop();
-							
-							// this means we won't look at any more packets that might've come in after 
-							// we processed this frame. this step forces the priority queue to only add
-							// packets for the next frame, 
-							lastFrameId = currFrameId+1 % 100;
-						}
-						
-						// don't need this block if all packets received!
-						/* if missing last packet, fill in 
-						std::cout << "lastPacketNum seen: " << lastPacketNum << std::endl;
-						std::cout << "num packets expected: " << packetsToExpect << std::endl;
-						for(int i = lastPacketNum+1; i <= packetsToExpect; i++){
-							std::cout << "filling in data for missing packet num after last packet: " << i << std::endl;
-							uint8_t* filler = new uint8_t[dataSize];
-							memset(filler, 255, dataSize);
-							pixelData.insert(pixelData.end(), filler, filler+dataSize);
-							delete[] filler;
-						}*/
-						
-						std::cout << "--------------" << std::endl;
-						
-						// form image
-						std::cout << "the total size of the image data in bytes: " << pixelData.size() << std::endl;
-						uint8_t* imageData = new uint8_t[(int)pixelData.size()];
-						
-						if(texBuf == nullptr){
-							texBuf = SDL_CreateTexture(
-										renderer,
-										SDL_PIXELFORMAT_ARGB8888,
-										SDL_TEXTUREACCESS_STREAMING,
-										WINDOW_WIDTH,
-										WINDOW_HEIGHT);
-						}
-						
-						int pitch = WINDOW_WIDTH * 4; // 4 bytes per pixel
-						SDL_LockTexture(texBuf, NULL, (void**)&imageData, &pitch);
-						
-						// fill the texture pixel buffer
-						memcpy(imageData, (uint8_t *)&pixelData[0], (int)pixelData.size());
-						
-						SDL_UnlockTexture(texBuf);
-						SDL_RenderCopy(renderer, texBuf, NULL, NULL);
-						SDL_RenderPresent(renderer);
-						
-						delete[] imageData;
-						
+						processImageInQueue(pqueue, lastFrameId, currFrameId, packetsToExpect, dataSize, texBuf, renderer);
+			
 						// reset
 						packetsReceived = 0;
 						
-						// get new frame from server
+						// ask for new frame from server
 						int bytesSent = sendto(connectSocket, msg, str.length(), 0, (struct sockaddr *)&servAddr, size);
 						if(bytesSent < 0){
 							printf("sendto for new frame failed.\n");
