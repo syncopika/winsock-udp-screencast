@@ -12,6 +12,7 @@
 #include <vector>
 
 #include <SDL2/SDL.h>
+#include <SDL2/SDL_ttf.h>
 
 #define DEFAULT_PORT 2000
 #define DEFAULT_BUFLEN 60000
@@ -307,6 +308,8 @@ DWORD WINAPI threadAction(LPVOID lpParam){
 
 // try making a main menu to input ip addr 
 // https://gamedev.stackexchange.com/questions/72878/how-can-i-implement-a-main-menu
+// https://lazyfoo.net/tutorials/SDL/32_text_input_and_clipboard_handling/index.php
+// https://stackoverflow.com/questions/22886500/how-to-render-text-in-sdl2
 // also quit option after communicating with server?
 int main(int argc, char *argv[]){
 	
@@ -341,28 +344,96 @@ int main(int argc, char *argv[]){
 	SDL_Event event;
 	bool quit = false;
 	bool spawnThread = false;
+	bool ipAddrEntered = false;
+	bool renderText = false;
+	std::string textInput = "";
 	
 	ThreadParams params;
 	params.renderer = renderer;
 	
-	std::string ip = "127.0.0.1";
+	std::string ipText = "127.0.0.1";
 	if(argc == 2){
-		ip = std::string(argv[1]);
+		ipText = std::string(argv[1]);
 	}
-	params.ipAddr = ip;
+	params.ipAddr = ipText;
 	
-	//while(1){
 	while(!quit){
 		while(SDL_PollEvent(&event)){
 			if(event.type == SDL_QUIT){
 				quit = true;
+			}else if(event.type == SDL_KEYDOWN && !ipAddrEntered){
+				// let user input ip addr.
+				// after user inputs ENTER key, spawn the thread
+				if(event.key.keysym.sym == SDLK_BACKSPACE && textInput.length() > 0){
+					textInput.pop_back();
+					renderText = true;
+				}else if(event.key.keysym.sym == SDLK_c && SDL_GetModState() & KMOD_CTRL){
+					SDL_SetClipboardText(textInput.c_str());
+				}else if(event.key.keysym.sym == SDLK_v && SDL_GetModState() & KMOD_CTRL){
+					textInput = SDL_GetClipboardText();
+					renderText = true;
+				}else if(event.key.keysym.sym == SDLK_RETURN){
+					// enter key pressed, process ip
+					if(textInput.length() == 9){
+						// validate 
+						// if ok, process
+						ipAddrEntered = true;
+						renderText = false;
+					}
+				}
+			}else if(event.type == SDL_TEXTINPUT && !ipAddrEntered){
+				if(textInput.length() == 9){
+					break;
+				}
+				
+				if(!(SDL_GetModState() & KMOD_CTRL && 
+				(event.text.text[0] == 'c' || event.text.text[0] == 'C' || event.text.text[0] == 'v' || event.text.text[0] == 'V'))){
+					textInput += event.text.text;
+					renderText = true;
+				}
 			}
 		}
-		if(!spawnThread){
+		
+		if(renderText){
+			if(textInput != ""){
+				// render text
+			}else{
+				// text is empty (so just render a space)
+			}
+		}
+		
+		if(!spawnThread && ipAddrEntered){
+			// validate ip first!
 			// make sure this only occurs once!
+			ipText = textInput;
 			CreateThread(NULL, 0, threadAction, (void *)&params, 0, 0);	
 			spawnThread = true;
 		}
+		
+		if(!renderText){
+			if(TTF_Init() == -1){
+				std::cout << "ttf init failed!" << std::endl;
+			}
+			TTF_Font* Sans = TTF_OpenFont("OpenSans-Regular.ttf", 12); //this opens a font style and sets a size
+			SDL_Color white = {255, 255, 255};  // this is the color in rgb format, maxing out all would give you the color white, and it will be your text's color
+			SDL_Surface* surfaceMessage = TTF_RenderText_Solid(Sans, "blah blah blah", white); // as TTF_RenderText_Solid could only be used on SDL_Surface then you have to create the surface first
+			SDL_Texture* Message = SDL_CreateTextureFromSurface(renderer, surfaceMessage); //now you can convert it into a texture
+			SDL_Rect Message_rect; //create a rect
+			Message_rect.x = 100;  //controls the rect's x coordinate 
+			Message_rect.y = 0; // controls the rect's y coordinte
+			Message_rect.w = 300; // controls the width of the rect
+			Message_rect.h = 100; // controls the height of the rect
+			SDL_RenderCopy(renderer, Message, NULL, &Message_rect);
+			SDL_RenderPresent(renderer);
+			renderText = true;
+		}
+		
+		
+		
+		// render prompt and input text 
+		// clear screen 
+		// render text textures 
+		// update screen
 	}
 	
 	// cleanup

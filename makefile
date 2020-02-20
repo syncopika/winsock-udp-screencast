@@ -18,8 +18,8 @@ ALL_LINK_FLAGS = $(LIB) -static-libstdc++ -static-libgcc
 # only server needs gdi
 SERVER_LINK_FLAGS = -lgdi32 -lgdiplus
 
-# only client needs sdl2
-CLIENT_LINK_FLAGS = -LC:\libraries\SDL2-2.0.10\i686-w64-mingw32\lib -lSDL2main -lSDL2
+# only client needs sdl2 + sdl2_ttf
+CLIENT_LINK_FLAGS = -LC:\libraries\SDL2-2.0.10\i686-w64-mingw32\lib -lSDL2main -lSDL2 -lSDL2_ttf
 
 EXE = server.exe client.exe
 
