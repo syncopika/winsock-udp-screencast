@@ -310,6 +310,8 @@ DWORD WINAPI threadAction(LPVOID lpParam){
 // https://gamedev.stackexchange.com/questions/72878/how-can-i-implement-a-main-menu
 // https://lazyfoo.net/tutorials/SDL/32_text_input_and_clipboard_handling/index.php
 // https://stackoverflow.com/questions/22886500/how-to-render-text-in-sdl2
+// https://stackoverflow.com/questions/1604268/how-can-i-clear-a-sdl-surface-to-be-replaced-with-another-one
+// https://forums.libsdl.org/viewtopic.php?p=41796
 // also quit option after communicating with server?
 int main(int argc, char *argv[]){
 	
@@ -356,8 +358,29 @@ int main(int argc, char *argv[]){
 		ipText = std::string(argv[1]);
 	}
 	params.ipAddr = ipText;
+
+	if(TTF_Init() == -1){
+		std::cout << "ttf init failed!" << std::endl;
+	}
 	
+	textInput = ipText;
+	TTF_Font* Sans = TTF_OpenFont("OpenSans-Regular.ttf", 12);
+	SDL_Color white = {255, 255, 255};
+	SDL_Rect Message_rect;
+	Message_rect.x = 100; 
+	Message_rect.y = 50; 
+	Message_rect.w = 350;
+	Message_rect.h = 100;
+	
+	SDL_Surface* lastSurfaceMessage;
+	SDL_Texture* lastMessage;
+	lastSurfaceMessage = TTF_RenderText_Solid(Sans, textInput.c_str(), white);
+	lastMessage = SDL_CreateTextureFromSurface(renderer, lastSurfaceMessage);
+	SDL_RenderCopy(renderer, lastMessage, NULL, &Message_rect);
+	SDL_RenderPresent(renderer);
+
 	while(!quit){
+		
 		while(SDL_PollEvent(&event)){
 			if(event.type == SDL_QUIT){
 				quit = true;
@@ -392,11 +415,34 @@ int main(int argc, char *argv[]){
 					renderText = true;
 				}
 			}
-		}
+		}// end pollevent
+		
 		
 		if(renderText){
 			if(textInput != ""){
 				// render text
+				SDL_Surface* surfaceMessage;
+				SDL_Texture* message;
+				
+				std::cout << "going to print: " << textInput << std::endl;
+				SDL_SetRenderDrawColor(renderer, 0x00, 0x00, 0x00, 0xFF);
+				SDL_RenderClear(renderer);
+				
+				surfaceMessage = TTF_RenderText_Solid(Sans, textInput.c_str(), white);
+				message = SDL_CreateTextureFromSurface(renderer, surfaceMessage);
+				SDL_RenderCopy(renderer, message, NULL, &Message_rect);
+				SDL_RenderPresent(renderer);
+				
+				SDL_Surface* surfaceMessageTemp = lastSurfaceMessage;
+				SDL_Texture* messageTemp = lastMessage;
+				
+				lastSurfaceMessage = surfaceMessage;
+				lastMessage = message;
+				
+				SDL_FreeSurface(surfaceMessageTemp);
+				SDL_DestroyTexture(messageTemp);
+				
+				renderText = false;
 			}else{
 				// text is empty (so just render a space)
 			}
@@ -409,32 +455,10 @@ int main(int argc, char *argv[]){
 			CreateThread(NULL, 0, threadAction, (void *)&params, 0, 0);	
 			spawnThread = true;
 		}
-		
-		if(!renderText){
-			if(TTF_Init() == -1){
-				std::cout << "ttf init failed!" << std::endl;
-			}
-			TTF_Font* Sans = TTF_OpenFont("OpenSans-Regular.ttf", 12); //this opens a font style and sets a size
-			SDL_Color white = {255, 255, 255};  // this is the color in rgb format, maxing out all would give you the color white, and it will be your text's color
-			SDL_Surface* surfaceMessage = TTF_RenderText_Solid(Sans, "blah blah blah", white); // as TTF_RenderText_Solid could only be used on SDL_Surface then you have to create the surface first
-			SDL_Texture* Message = SDL_CreateTextureFromSurface(renderer, surfaceMessage); //now you can convert it into a texture
-			SDL_Rect Message_rect; //create a rect
-			Message_rect.x = 100;  //controls the rect's x coordinate 
-			Message_rect.y = 0; // controls the rect's y coordinte
-			Message_rect.w = 300; // controls the width of the rect
-			Message_rect.h = 100; // controls the height of the rect
-			SDL_RenderCopy(renderer, Message, NULL, &Message_rect);
-			SDL_RenderPresent(renderer);
-			renderText = true;
-		}
-		
-		
-		
-		// render prompt and input text 
-		// clear screen 
-		// render text textures 
-		// update screen
 	}
+	
+	SDL_FreeSurface(lastSurfaceMessage);
+	SDL_DestroyTexture(lastMessage);
 	
 	// cleanup
 	WSACleanup();
