@@ -12,6 +12,7 @@
 #include <vector>
 
 #include <SDL2/SDL.h>
+#include <SDL2/SDL_ttf.h>
 
 #define DEFAULT_PORT 2000
 #define DEFAULT_BUFLEN 60000
@@ -114,6 +115,13 @@ void processImageInQueue(std::priority_queue<std::pair<int, uint8_t*>,
 
 void logSDLError(std::ostream &os, const std::string &msg){
 	os << msg << " error: " << SDL_GetError() << std::endl;
+}
+
+void addRectDimensions(SDL_Rect* rect, int x, int y, int w, int h){
+	rect->x = x;
+	rect->y = y;
+	rect->w = w;
+	rect->h = h;
 }
 
 void talkToServer(ThreadParams params){
@@ -306,7 +314,6 @@ DWORD WINAPI threadAction(LPVOID lpParam){
 }
 
 // try making a main menu to input ip addr 
-// https://gamedev.stackexchange.com/questions/72878/how-can-i-implement-a-main-menu
 // also quit option after communicating with server?
 int main(int argc, char *argv[]){
 	
@@ -341,34 +348,156 @@ int main(int argc, char *argv[]){
 	SDL_Event event;
 	bool quit = false;
 	bool spawnThread = false;
+	bool ipAddrEntered = false;
+	bool renderText = false;
+	std::string textInput = "";
 	
 	ThreadParams params;
 	params.renderer = renderer;
 	
-	std::string ip = "127.0.0.1";
+	std::string ipText = "127.0.0.1";
 	if(argc == 2){
-		ip = std::string(argv[1]);
+		ipText = std::string(argv[1]);
 	}
-	params.ipAddr = ip;
+	params.ipAddr = ipText;
+
+	if(TTF_Init() == -1){
+		std::cout << "ttf init failed!" << std::endl;
+	}
 	
-	//while(1){
+	TTF_Font* Sans = TTF_OpenFont("OpenSans-Regular.ttf", 12);
+	SDL_Color white = {255, 255, 255};
+	
+	// rect for holding current input text
+	textInput = ipText;
+	SDL_Rect inputTextRect;
+	addRectDimensions(&inputTextRect, 130, 220, 350, 100);
+	
+	// rect for instructions
+	std::string instructionText = "  Set the IP address to stream from.  ";
+	SDL_Rect instructionsRect;
+	addRectDimensions(&instructionsRect, 60, 30, 480, 100);
+	
+	std::string instructionText2 = "Press enter when ready!";
+	SDL_Rect instructionsRect2;
+	addRectDimensions(&instructionsRect2, 60, 120, 480, 100);
+	
+	SDL_Surface* instructionTextSurface;
+	SDL_Texture* instructionTexture;
+	instructionTextSurface = TTF_RenderText_Solid(Sans, instructionText.c_str(), white);
+	instructionTexture = SDL_CreateTextureFromSurface(renderer, instructionTextSurface);
+	
+	SDL_Surface* instructionTextSurface2;
+	SDL_Texture* instructionTexture2;
+	instructionTextSurface2 = TTF_RenderText_Solid(Sans, instructionText2.c_str(), white);
+	instructionTexture2 = SDL_CreateTextureFromSurface(renderer, instructionTextSurface2);
+	
+	SDL_Surface* lastSurfaceMessage;
+	SDL_Texture* lastMessage;
+	lastSurfaceMessage = TTF_RenderText_Solid(Sans, textInput.c_str(), white);
+	lastMessage = SDL_CreateTextureFromSurface(renderer, lastSurfaceMessage);
+	
+	SDL_RenderCopy(renderer, lastMessage, NULL, &inputTextRect);
+	SDL_RenderCopy(renderer, instructionTexture, NULL, &instructionsRect);
+	SDL_RenderCopy(renderer, instructionTexture2, NULL, &instructionsRect2);
+
+	SDL_RenderPresent(renderer);
+
 	while(!quit){
+		
 		while(SDL_PollEvent(&event)){
 			if(event.type == SDL_QUIT){
 				quit = true;
+			}else if(event.type == SDL_KEYDOWN && !ipAddrEntered){
+				// let user input ip addr.
+				// after user inputs ENTER key, spawn the thread
+				if(event.key.keysym.sym == SDLK_BACKSPACE && textInput.length() > 0){
+					textInput.pop_back();
+					renderText = true;
+				}else if(event.key.keysym.sym == SDLK_c && SDL_GetModState() & KMOD_CTRL){
+					SDL_SetClipboardText(textInput.c_str());
+				}else if(event.key.keysym.sym == SDLK_v && SDL_GetModState() & KMOD_CTRL){
+					textInput = SDL_GetClipboardText();
+					renderText = true;
+				}else if(event.key.keysym.sym == SDLK_RETURN){
+					// enter key pressed, process ip
+					if(textInput.length() >= 9){
+						// validate 
+						// if ok, process
+						ipAddrEntered = true;
+						renderText = false;
+						std::cout << "user pressed enter. trying to connect to: " << textInput << std::endl;
+					}
+				}
+			}else if(event.type == SDL_TEXTINPUT && !ipAddrEntered){
+				if(textInput.length() == 15){
+					// max possible ip is abc.efg.hij.klm
+					break;
+				}
+				
+				if(!(SDL_GetModState() & KMOD_CTRL && 
+				(event.text.text[0] == 'c' || event.text.text[0] == 'C' || event.text.text[0] == 'v' || event.text.text[0] == 'V'))){
+					textInput += event.text.text;
+					renderText = true;
+				}
+			}
+		}// end pollevent
+		
+		
+		if(renderText){
+			if(textInput != ""){
+				// render text
+				SDL_Surface* surfaceMessage;
+				SDL_Texture* message;
+				
+				std::cout << "going to print: " << textInput << std::endl;
+				SDL_SetRenderDrawColor(renderer, 0x00, 0x00, 0x00, 0xFF);
+				SDL_RenderClear(renderer);
+				
+				surfaceMessage = TTF_RenderText_Solid(Sans, textInput.c_str(), white);
+				message = SDL_CreateTextureFromSurface(renderer, surfaceMessage);
+				
+				SDL_RenderCopy(renderer, message, NULL, &inputTextRect);
+				SDL_RenderCopy(renderer, instructionTexture, NULL, &instructionsRect);
+				SDL_RenderCopy(renderer, instructionTexture2, NULL, &instructionsRect2);
+				SDL_RenderPresent(renderer);
+				
+				SDL_Surface* surfaceMessageTemp = lastSurfaceMessage;
+				SDL_Texture* messageTemp = lastMessage;
+				
+				lastSurfaceMessage = surfaceMessage;
+				lastMessage = message;
+				
+				SDL_FreeSurface(surfaceMessageTemp);
+				SDL_DestroyTexture(messageTemp);
+				
+				renderText = false;
 			}
 		}
-		if(!spawnThread){
+		
+		if(!spawnThread && ipAddrEntered){
+			// validate ip first!
 			// make sure this only occurs once!
+			ipText = textInput;
 			CreateThread(NULL, 0, threadAction, (void *)&params, 0, 0);	
 			spawnThread = true;
 		}
 	}
 	
 	// cleanup
+	SDL_FreeSurface(instructionTextSurface);
+	SDL_DestroyTexture(instructionTexture);
+	
+	SDL_FreeSurface(instructionTextSurface2);
+	SDL_DestroyTexture(instructionTexture2);
+	
+	SDL_FreeSurface(lastSurfaceMessage);
+	SDL_DestroyTexture(lastMessage);
+	
 	WSACleanup();
 	SDL_DestroyRenderer(renderer);
 	SDL_DestroyWindow(window);
 	SDL_Quit();
+	
 	return 0;
 }
