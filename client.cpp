@@ -117,6 +117,13 @@ void logSDLError(std::ostream &os, const std::string &msg){
 	os << msg << " error: " << SDL_GetError() << std::endl;
 }
 
+void addRectDimensions(SDL_Rect* rect, int x, int y, int w, int h){
+	rect->x = x;
+	rect->y = y;
+	rect->w = w;
+	rect->h = h;
+}
+
 void talkToServer(ThreadParams params){
 	SDL_Renderer* renderer = params.renderer;
 	
@@ -307,11 +314,6 @@ DWORD WINAPI threadAction(LPVOID lpParam){
 }
 
 // try making a main menu to input ip addr 
-// https://gamedev.stackexchange.com/questions/72878/how-can-i-implement-a-main-menu
-// https://lazyfoo.net/tutorials/SDL/32_text_input_and_clipboard_handling/index.php
-// https://stackoverflow.com/questions/22886500/how-to-render-text-in-sdl2
-// https://stackoverflow.com/questions/1604268/how-can-i-clear-a-sdl-surface-to-be-replaced-with-another-one
-// https://forums.libsdl.org/viewtopic.php?p=41796
 // also quit option after communicating with server?
 int main(int argc, char *argv[]){
 	
@@ -363,20 +365,42 @@ int main(int argc, char *argv[]){
 		std::cout << "ttf init failed!" << std::endl;
 	}
 	
-	textInput = ipText;
 	TTF_Font* Sans = TTF_OpenFont("OpenSans-Regular.ttf", 12);
 	SDL_Color white = {255, 255, 255};
-	SDL_Rect Message_rect;
-	Message_rect.x = 100; 
-	Message_rect.y = 50; 
-	Message_rect.w = 350;
-	Message_rect.h = 100;
+	
+	// rect for holding current input text
+	textInput = ipText;
+	SDL_Rect inputTextRect;
+	addRectDimensions(&inputTextRect, 130, 220, 350, 100);
+	
+	// rect for instructions
+	std::string instructionText = "  Set the IP address to stream from.  ";
+	SDL_Rect instructionsRect;
+	addRectDimensions(&instructionsRect, 60, 30, 480, 100);
+	
+	std::string instructionText2 = "Press enter when ready!";
+	SDL_Rect instructionsRect2;
+	addRectDimensions(&instructionsRect2, 60, 120, 480, 100);
+	
+	SDL_Surface* instructionTextSurface;
+	SDL_Texture* instructionTexture;
+	instructionTextSurface = TTF_RenderText_Solid(Sans, instructionText.c_str(), white);
+	instructionTexture = SDL_CreateTextureFromSurface(renderer, instructionTextSurface);
+	
+	SDL_Surface* instructionTextSurface2;
+	SDL_Texture* instructionTexture2;
+	instructionTextSurface2 = TTF_RenderText_Solid(Sans, instructionText2.c_str(), white);
+	instructionTexture2 = SDL_CreateTextureFromSurface(renderer, instructionTextSurface2);
 	
 	SDL_Surface* lastSurfaceMessage;
 	SDL_Texture* lastMessage;
 	lastSurfaceMessage = TTF_RenderText_Solid(Sans, textInput.c_str(), white);
 	lastMessage = SDL_CreateTextureFromSurface(renderer, lastSurfaceMessage);
-	SDL_RenderCopy(renderer, lastMessage, NULL, &Message_rect);
+	
+	SDL_RenderCopy(renderer, lastMessage, NULL, &inputTextRect);
+	SDL_RenderCopy(renderer, instructionTexture, NULL, &instructionsRect);
+	SDL_RenderCopy(renderer, instructionTexture2, NULL, &instructionsRect2);
+
 	SDL_RenderPresent(renderer);
 
 	while(!quit){
@@ -397,15 +421,17 @@ int main(int argc, char *argv[]){
 					renderText = true;
 				}else if(event.key.keysym.sym == SDLK_RETURN){
 					// enter key pressed, process ip
-					if(textInput.length() == 9){
+					if(textInput.length() >= 9){
 						// validate 
 						// if ok, process
 						ipAddrEntered = true;
 						renderText = false;
+						std::cout << "user pressed enter. trying to connect to: " << textInput << std::endl;
 					}
 				}
 			}else if(event.type == SDL_TEXTINPUT && !ipAddrEntered){
-				if(textInput.length() == 9){
+				if(textInput.length() == 15){
+					// max possible ip is abc.efg.hij.klm
 					break;
 				}
 				
@@ -430,7 +456,10 @@ int main(int argc, char *argv[]){
 				
 				surfaceMessage = TTF_RenderText_Solid(Sans, textInput.c_str(), white);
 				message = SDL_CreateTextureFromSurface(renderer, surfaceMessage);
-				SDL_RenderCopy(renderer, message, NULL, &Message_rect);
+				
+				SDL_RenderCopy(renderer, message, NULL, &inputTextRect);
+				SDL_RenderCopy(renderer, instructionTexture, NULL, &instructionsRect);
+				SDL_RenderCopy(renderer, instructionTexture2, NULL, &instructionsRect2);
 				SDL_RenderPresent(renderer);
 				
 				SDL_Surface* surfaceMessageTemp = lastSurfaceMessage;
@@ -443,8 +472,6 @@ int main(int argc, char *argv[]){
 				SDL_DestroyTexture(messageTemp);
 				
 				renderText = false;
-			}else{
-				// text is empty (so just render a space)
 			}
 		}
 		
@@ -456,6 +483,12 @@ int main(int argc, char *argv[]){
 			spawnThread = true;
 		}
 	}
+	
+	SDL_FreeSurface(instructionTextSurface);
+	SDL_DestroyTexture(instructionTexture);
+	
+	SDL_FreeSurface(instructionTextSurface2);
+	SDL_DestroyTexture(instructionTexture2);
 	
 	SDL_FreeSurface(lastSurfaceMessage);
 	SDL_DestroyTexture(lastMessage);

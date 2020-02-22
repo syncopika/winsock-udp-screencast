@@ -20,3 +20,10 @@ https://stackoverflow.com/questions/1163369/how-to-convert-gdis-image-into-bitma
 https://www.winsocketdotnetworkprogramming.com/winsock2programming/winsock2advancedcode1f.html
 https://stackoverflow.com/questions/6755637/recv-windows-socket-takes-infinite-time-how-to-timeout
 https://stackoverflow.com/questions/1824465/set-timeout-for-winsock-recvfrom
+
+// sdl ttf stuff
+// https://gamedev.stackexchange.com/questions/72878/how-can-i-implement-a-main-menu
+// https://lazyfoo.net/tutorials/SDL/32_text_input_and_clipboard_handling/index.php
+// https://stackoverflow.com/questions/22886500/how-to-render-text-in-sdl2
+// https://stackoverflow.com/questions/1604268/how-can-i-clear-a-sdl-surface-to-be-replaced-with-another-one
+// https://forums.libsdl.org/viewtopic.php?p=41796

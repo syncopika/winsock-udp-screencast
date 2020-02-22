@@ -44,4 +44,3 @@ server.o: server.cpp
 	
 clean:
 	rm *.o
-	rm *.exe
