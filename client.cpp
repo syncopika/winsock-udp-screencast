@@ -484,6 +484,7 @@ int main(int argc, char *argv[]){
 		}
 	}
 	
+	// cleanup
 	SDL_FreeSurface(instructionTextSurface);
 	SDL_DestroyTexture(instructionTexture);
 	
@@ -493,10 +494,10 @@ int main(int argc, char *argv[]){
 	SDL_FreeSurface(lastSurfaceMessage);
 	SDL_DestroyTexture(lastMessage);
 	
-	// cleanup
 	WSACleanup();
 	SDL_DestroyRenderer(renderer);
 	SDL_DestroyWindow(window);
 	SDL_Quit();
+	
 	return 0;
 }
