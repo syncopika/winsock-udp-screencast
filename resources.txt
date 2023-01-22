@@ -11,6 +11,7 @@ https://stackoverflow.com/questions/356950/what-are-c-functors-and-their-uses
 https://stackoverflow.com/questions/21007329/what-is-an-sdl-renderer
 https://gamedev.stackexchange.com/questions/102490/fastest-way-to-render-image-data-from-buffer
 https://www.gamedev.net/forums/topic/683956-blit-a-byte-array-of-pixels-to-screen-in-sdl-fast/
+https://stackoverflow.com/questions/53051590/udp-server-client-c-sendto-recvfrom
 
 // relevant to server code
 https://stackoverflow.com/questions/4041657/gdiplus-scale-bitmap
