@@ -241,7 +241,6 @@ int main(void){
 	int frameCount = 0;
 	
 	while(1){
-
 		//ZeroMemory(recvbuf, recvbuflen);
 		
 		// get the new data 

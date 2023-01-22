@@ -197,7 +197,7 @@ void talkToServer(ThreadParams params){
 		// set up time stuff for select timeout
 		// https://stackoverflow.com/questions/21743231/winsock-selects-timeout-on-listening-socket-causing-every-subsequent-select-c
 		timeval timeout;
-		timeout.tv_sec = 2;
+		timeout.tv_sec = 10;
 		timeout.tv_usec = 0;
 		fd_set fds;
 		FD_ZERO(&fds);
