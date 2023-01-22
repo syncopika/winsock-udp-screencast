@@ -96,7 +96,8 @@ void processImageInQueue(std::priority_queue<std::pair<int, uint8_t*>,
 					SDL_PIXELFORMAT_ARGB8888,
 					SDL_TEXTUREACCESS_STREAMING,
 					WINDOW_WIDTH,
-					WINDOW_HEIGHT);
+					WINDOW_HEIGHT
+                 );
 	}
 	
 	int pitch = WINDOW_WIDTH * 4; // 4 bytes per pixel
@@ -152,16 +153,11 @@ void talkToServer(ThreadParams params){
 	ZeroMemory(&servAddr, sizeof(servAddr));
 	servAddr.sin_family = AF_INET;
 
-	const char* theIp = params.ipAddr.c_str();// = "127.0.0.1"; // pass in ip as arg to client?
-	
+	const char* theIp = params.ipAddr.c_str();
+    servAddr.sin_addr.s_addr = inet_addr(theIp);
+	servAddr.sin_port = htons(DEFAULT_PORT);
+    
 	int size = sizeof(servAddr);
-	iResult = WSAStringToAddressA((LPSTR)theIp, AF_INET, NULL, (struct sockaddr *)&servAddr, &size);
-	if(iResult != 0){
-		printf("getaddrinfo failed: %d\n", iResult);
-		WSACleanup();
-	}else{
-		servAddr.sin_port = htons(DEFAULT_PORT);
-	}
 	
 	SOCKET connectSocket = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
 	if(connectSocket == INVALID_SOCKET){
@@ -193,7 +189,6 @@ void talkToServer(ThreadParams params){
 	SDL_Texture* texBuf = nullptr;
 	
 	while(true){
-		
 		// set up time stuff for select timeout
 		// https://stackoverflow.com/questions/21743231/winsock-selects-timeout-on-listening-socket-causing-every-subsequent-select-c
 		timeval timeout;
@@ -208,7 +203,7 @@ void talkToServer(ThreadParams params){
 		
 		// send msg 
 		if(!sentInitMsg){
-			int bytesSent = sendto(connectSocket, msg, str.length(), 0, (struct sockaddr *)&servAddr, size);
+			int bytesSent = sendto(connectSocket, msg, str.length(), 0, (struct sockaddr *)&servAddr, sizeof(servAddr));
 			if(bytesSent < 0){
 				printf("sendto failed.\n");
 				exit(1);
@@ -228,7 +223,7 @@ void talkToServer(ThreadParams params){
 			packetsReceived = 0;
 			
 			// ask for new frame from server
-			int bytesSent = sendto(connectSocket, msg, str.length(), 0, (struct sockaddr *)&servAddr, size);
+			int bytesSent = sendto(connectSocket, msg, str.length(), 0, (struct sockaddr *)&servAddr, sizeof(servAddr));
 			if(bytesSent < 0){
 				printf("sendto for new frame failed.\n");
 				exit(1);
@@ -359,7 +354,6 @@ int main(int argc, char *argv[]){
 	if(argc == 2){
 		ipText = std::string(argv[1]);
 	}
-	params.ipAddr = ipText;
 
 	if(TTF_Init() == -1){
 		std::cout << "ttf init failed!" << std::endl;
@@ -404,7 +398,6 @@ int main(int argc, char *argv[]){
 	SDL_RenderPresent(renderer);
 
 	while(!quit){
-		
 		while(SDL_PollEvent(&event)){
 			if(event.type == SDL_QUIT){
 				quit = true;
@@ -450,7 +443,7 @@ int main(int argc, char *argv[]){
 				SDL_Surface* surfaceMessage;
 				SDL_Texture* message;
 				
-				std::cout << "going to print: " << textInput << std::endl;
+				//std::cout << "going to print: " << textInput << std::endl;
 				SDL_SetRenderDrawColor(renderer, 0x00, 0x00, 0x00, 0xFF);
 				SDL_RenderClear(renderer);
 				
@@ -479,6 +472,7 @@ int main(int argc, char *argv[]){
 			// validate ip first!
 			// make sure this only occurs once!
 			ipText = textInput;
+            params.ipAddr = ipText;
 			CreateThread(NULL, 0, threadAction, (void *)&params, 0, 0);	
 			spawnThread = true;
 		}

@@ -10,8 +10,8 @@ https://docs.microsoft.com/en-us/windows/win32/medfound/image-stride
 
 #define _WIN32_WINNT 0x501 // https://stackoverflow.com/questions/36420044/winsock-server-and-client-c-code-getaddrinfo-was-not-declared-in-this-scope
 
-#include <windows.h>
 #include <winsock2.h>
+#include <windows.h>
 #include <ws2tcpip.h>
 #include <cassert>
 #include <cmath>
@@ -164,7 +164,7 @@ void sendCurrentScreencap(int frameIdNum, int sendSocket, struct sockaddr* clien
 		printf("sendto failed.\n");
 		exit(1);
 	}
-	delete newFrameMessage;
+	delete[] newFrameMessage;
 	
 	// then send image chunks
 	int totalBytesRem = totalBytes;
@@ -188,7 +188,7 @@ void sendCurrentScreencap(int frameIdNum, int sendSocket, struct sockaddr* clien
 	std::cout << "sent all packets for frame: " << frameIdNum << std::endl;
 	std::cout << "--------------" << std::endl;
 	
-	delete pixelBuffer;
+	delete[] pixelBuffer;
 	delete screenCap;
 }
 
@@ -205,7 +205,7 @@ int main(void){
 	
 	struct sockaddr_in servAddr;
 	struct sockaddr_in clientAddr;
-	socklen_t clientAddrLen = sizeof(clientAddr);
+	int clientAddrLen = sizeof(clientAddr);
 	
 	// intialize winsock 
 	iResult = WSAStartup(MAKEWORD(2,2), &wsaData);
@@ -275,7 +275,9 @@ int main(void){
 				sendCurrentScreencap(frameCount, serverSocket, (struct sockaddr *)&clientAddr, clientAddrLen);
 				frameCount++;
 			}
-		}
+		}else{
+            printf("iResult: %d\n", iResult);
+        }
 		
 		// when a client closes and stops talking to the server and a new client instance is started and 
 		// tries to talk to the same server that's still running, it looks like it takes a while for the server to notice a new 

@@ -4,3 +4,6 @@ Currently it seems to work fairly well, but the client window is set to be at 60
     
 ![screenshot](screenshots/ip_input_demo.gif "gif of what ip addr input looks like")   
 ![screenshot](screenshots/udp-screencast-demo.gif "gif of client and server")    
+    
+installation:    
+I highly recommend using WinLibs (https://winlibs.com/) now but I started this project using MinGW (gcc 6.3.0) so that should work as well. You'll also need to get SDL2 and SDL2-ttf. Modify the paths for gdiplus and SDL2 in the makefile and running `make` should build the executables.    
